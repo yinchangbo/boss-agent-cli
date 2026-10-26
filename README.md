@@ -89,6 +89,15 @@ boss --platform zhipin search "Python"     # --platform 默认即 zhipin，可�
 
 推荐先读：[Agent Quickstart](docs/agent-quickstart.md) · [Capability Matrix](docs/capability-matrix.md) · [Host Examples](docs/agent-hosts.md)
 
+项目内置[招聘 Skill](.agents/skills/boss-recruiter/SKILL.md)，使用本仓库 CLI 编排候选人搜索、简历分析及招聘沟通。CLI 可安装在 Skill 自身的独立环境中：
+
+```bash
+python .agents/skills/boss-recruiter/scripts/setup_cli.py
+python .agents/skills/boss-recruiter/scripts/boss.py --json --role recruiter schema
+```
+
+支持该 Skill 目录的 Agent 宿主可通过 `$boss-recruiter` 调用；其他宿主也可直接加载 `SKILL.md` 并执行脚本。首次使用需要登录时，再按 Skill 指引安装浏览器并完成登录。
+
 ```json
 // 方式一：MCP（推荐）—— Claude Desktop / Cursor 等 MCP 宿主，暴露 78 个已实现工具
 { "mcpServers": { "boss-agent": { "command": "uvx", "args": ["--from", "boss-agent-cli[mcp]", "boss-mcp"] } } }

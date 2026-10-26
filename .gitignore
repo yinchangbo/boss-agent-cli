@@ -17,7 +17,8 @@ CLAUDE.md
 AGENTS.md
 GEMINI.md
 .ace-tool/
-.agents/skills/
+.agents/skills/*
+!.agents/skills/boss-recruiter/
 .agents/skills.disabled-*/
 .trellis/
 skills/*.disabled-*/

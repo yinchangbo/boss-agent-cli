@@ -1,0 +1,4 @@
+interface:
+  display_name: "BOSS 招聘助手"
+  short_description: "基于本项目 CLI 搜索候选人、分析简历、整理沟通并推进招聘流程"
+  default_prompt: "使用 $boss-recruiter 根据岗位要求筛选候选人，给出有依据的匹配分析和待发送沟通草稿。"
