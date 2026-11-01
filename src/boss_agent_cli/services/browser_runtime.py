@@ -24,7 +24,16 @@ def patchright_chromium_revision() -> str | None:
 
 
 def patchright_browser_cache_dirs() -> list[Path]:
-	"""Return Playwright/Patchright browser cache directories for the current OS."""
+	"""优先使用驱动实际选择的目录，避免用系统缓存掩盖无效的显式配置。"""
+	if configured := os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+		if configured == "0":
+			import patchright
+
+			return [Path(patchright.__file__).resolve().parent / "driver/package/.local-browsers"]
+		path = Path(configured)
+		if not path.is_absolute():
+			path = Path(os.environ.get("INIT_CWD") or Path.cwd()) / path
+		return [path.resolve()]
 	dirs = [
 		Path.home() / ".cache" / "ms-playwright",
 		Path.home() / "Library" / "Caches" / "ms-playwright",
@@ -32,6 +41,15 @@ def patchright_browser_cache_dirs() -> list[Path]:
 	if local_app_data := os.environ.get("LOCALAPPDATA"):
 		dirs.append(Path(local_app_data) / "ms-playwright")
 	return dirs
+
+
+def installed_patchright_chromium_dirs() -> list[Path]:
+	"""将缓存根目录展开成修订版目录，供 doctor 和登录向导共用。"""
+	installed = []
+	for base in patchright_browser_cache_dirs():
+		for pattern in ("chromium-*", "chromium_headless_shell-*"):
+			installed.extend(path for path in base.glob(pattern) if path.is_dir())
+	return installed
 
 
 def evaluate_patchright_chromium(required_revision: str | None, installed: list[Path]) -> tuple[str, str]:

@@ -4,15 +4,28 @@
 
 ## package_recruiter_skill.py
 
-生成可以独立分发的招聘 Skill，无需接收者拥有本项目源码：
+构建唯一分发形式：Windows x64 便携版招聘 Skill。维护者在 Windows x64、Python 3.10+（pip 支持 `--python`）环境运行：
 
 ```bash
 python scripts/package_recruiter_skill.py
 ```
 
-脚本构建当前源码的 wheel，更新 `.agents/skills/boss-recruiter/assets/` 中的安装包，生成 `dist/boss-recruiter.zip`。压缩包只包含 Skill 说明、命令参考、启动/安装脚本及 CLI wheel，不包含 `.venv`、登录态或业务数据。CLI 修改后需重新打包。
+脚本构建当前源码，生成 `dist/boss-recruiter.zip`，内含 Python 3.14.10、全部 CLI 运行依赖、Patchright 1.64.3、Chromium 156.0.8078.4（修订版 1248）、Headless Shell 和配套组件。接收者解压后，Agent 按 `SKILL.md` 调用 `boss.cmd`，无需安装 Python、pip、依赖或浏览器。招聘操作仍需网络和用户自己的登录态。只支持 Windows x64。
 
-接收者需要 Python 3.10 及以上，解压后在 `boss-recruiter` 目录执行 `python scripts/setup_cli.py`，联网安装第三方依赖；扫码登录还需 `python scripts/setup_cli.py --browser`。每台电脑重新创建环境，不能分发可编辑安装的 `.venv`。
+- `assets/runtime-lock.json` 固定 Python 下载地址与 SHA-256、Patchright 和 Chromium 版本；`assets/requirements-windows.lock.txt` 固定全部第三方 wheel 的版本和 SHA-256。构建时校验实际 `browsers.json`，不靠手工猜测配对关系。
+- 包使用 Python 官方嵌入式发行版，路径相对于包内 `python.exe`。不复制开发者 `.venv`，不打入登录态、业务数据、浏览器用户配置或构建机绝对路径启动器。
+- 下载缓存位于 `dist/windows-build/`。每次用全新临时目录组装，成功验收后才替换最终 ZIP；`dist/boss-recruiter.zip.sha256` 与 `dist/boss-recruiter.validation.json` 分别保存校验值和验收报告。
+- 验收将 ZIP 解压至仓库外的中文/空格路径，清空系统 Python PATH，使用临时用户目录，检查文件完整性、CLI、doctor、登录向导预检和两种 Chromium 可执行程序的实际启动。不访问招聘业务接口。
+- `PLAYWRIGHT_BROWSERS_PATH` 默认自动指向包内浏览器；用户显式设置时保留覆盖。doctor 与向导只检查实际选中的目录，支持 `0` 和相对路径。
+- 更新 CLI 后重新打包。升级运行时需一起审核两个锁文件、Skill 中的版本说明并重新验收，不在接收者电脑上单独升级 Patchright。
+
+依据：[Python 嵌入式发行版](https://docs.python.org/3/using/windows.html#the-embeddable-package)、[Python 3.14.10 下载及校验值](https://www.python.org/downloads/release/python-31410/)、[Patchright 1.64.3](https://pypi.org/project/patchright/1.64.3/)。
+
+已有 ZIP 可单独复验：
+
+```bash
+python scripts/verify_recruiter_windows.py dist/boss-recruiter.zip --report dist/boss-recruiter.validation.json
+```
 
 ## verify_release.py
 

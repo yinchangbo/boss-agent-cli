@@ -40,14 +40,14 @@ def _browser_kernel_status() -> tuple[str, str]:
 	"""
 	from boss_agent_cli.services.browser_runtime import (
 		evaluate_patchright_chromium,
-		patchright_browser_cache_dirs,
+		installed_patchright_chromium_dirs,
 		patchright_chromium_revision,
 	)
 
 	try:
 		return evaluate_patchright_chromium(
 			patchright_chromium_revision(),
-			patchright_browser_cache_dirs(),
+			installed_patchright_chromium_dirs(),
 		)
 	except Exception as exc:  # 预检本身不该阻断登录，退化成 warn
 		return "warn", f"无法确认浏览器内核状态：{exc}"

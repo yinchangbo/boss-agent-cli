@@ -1,9 +1,11 @@
-"""验证 Skill 分发不携带开发环境，安装不再追溯作者的源码目录。"""
+"""验证 Windows Skill 的独立入口、版本锁与分发文件边界。"""
 
 import importlib.util
+import json
+import os
 import sys
 from pathlib import Path
-from zipfile import ZipFile
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,53 +20,88 @@ def load_script(path):
 	return module
 
 
-def test_archive_excludes_environment_and_business_data(tmp_path):
+def test_copy_excludes_development_environment_and_business_data(tmp_path):
 	packager = load_script(ROOT / "scripts/package_recruiter_skill.py")
-	skill = tmp_path / "boss-recruiter"
-	required = [
-		"SKILL.md",
-		"agents/openai.yaml",
-		"references/recruiter-cli.md",
-		"scripts/boss.py",
-		"scripts/setup_cli.py",
-		"assets/boss_agent_cli-1-py3-none-any.whl",
-	]
-	for name in [*required, ".venv/pyvenv.cfg", "candidates.json", "scripts/__pycache__/boss.pyc"]:
-		path = skill / name
+	source = tmp_path / "source"
+	for name in [*packager.SKILL_FILES, ".venv/pyvenv.cfg", "candidates.json", "scripts/__pycache__/boss.pyc"]:
+		path = source / name
 		path.parent.mkdir(parents=True, exist_ok=True)
 		path.write_text("测试", encoding="utf-8")
-	archive = tmp_path / "skill.zip"
-	packager.write_archive(skill, skill / required[-1], archive)
-	with ZipFile(archive) as zipped:
-		assert set(zipped.namelist()) == {f"boss-recruiter/{name}" for name in required}
+	destination = tmp_path / "bundle"
+	packager.copy_skill_files(source, destination)
+	assert {p.relative_to(destination).as_posix() for p in destination.rglob("*") if p.is_file()} == set(
+		packager.SKILL_FILES
+	)
 
 
-def test_setup_installs_bundled_wheel_outside_repository(tmp_path, monkeypatch):
-	setup = load_script(ROOT / ".agents/skills/boss-recruiter/scripts/setup_cli.py")
-	skill = tmp_path / "独立 Skill"
-	wheel = skill / "assets/boss_agent_cli-1-py3-none-any.whl"
-	wheel.parent.mkdir(parents=True)
-	wheel.touch()
-	monkeypatch.setattr(setup, "__file__", str(skill / "scripts/setup_cli.py"))
-	monkeypatch.setattr(sys, "argv", ["setup_cli.py"])
-	monkeypatch.setattr(setup.venv.EnvBuilder, "create", lambda *args: None)
+@pytest.mark.parametrize("override", [None, "0", "relative-browsers", "C:/custom/browsers"])
+def test_launcher_resolves_browser_path_and_preserves_override(tmp_path, monkeypatch, override):
+	launcher = load_script(ROOT / ".agents/skills/boss-recruiter/scripts/boss.py")
+	(tmp_path / "ms-playwright").mkdir()
+	monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+	if override is not None:
+		monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", override)
+	assert launcher._resolve_browsers_path(tmp_path) == (override or str(tmp_path / "ms-playwright"))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows 启动器")
+def test_launcher_uses_bundled_python_and_passes_arguments_and_exit_code(tmp_path, monkeypatch):
+	launcher = load_script(ROOT / ".agents/skills/boss-recruiter/scripts/boss.py")
+	python = tmp_path / "runtime/python.exe"
+	python.parent.mkdir()
+	python.touch()
+	(tmp_path / "ms-playwright").mkdir()
+	monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+	monkeypatch.setattr(launcher, "__file__", str(tmp_path / "scripts/boss.py"))
+	arguments = ["hr", "candidates", "中文 空格 & 特殊字符"]
+	monkeypatch.setattr(sys, "argv", ["boss.py", *arguments])
 	calls = []
-	monkeypatch.setattr(setup.subprocess, "run", lambda command, **kwargs: calls.append(command))
-	assert setup.main() == 0
-	assert calls[0][-1] == str(wheel)
-	assert "--editable" not in calls[0]
+	monkeypatch.setattr(
+		launcher.subprocess,
+		"run",
+		lambda command, **kwargs: calls.append((command, kwargs)) or SimpleNamespace(returncode=7),
+	)
+	assert launcher.main() == 7
+	command, options = calls[0]
+	assert command[0] == str(python)
+	assert command[-3:] == arguments
+	assert "-I" in command
+	assert options["env"]["PLAYWRIGHT_BROWSERS_PATH"] == str(tmp_path / "ms-playwright")
+	assert options["env"]["PATH"].split(os.pathsep)[0] == str(tmp_path)
+	assert "PLAYWRIGHT_BROWSERS_PATH" not in os.environ
 
 
-@pytest.mark.parametrize("count", [0, 2])
-def test_missing_or_ambiguous_wheel_fails_before_install(tmp_path, monkeypatch, count):
-	setup = load_script(ROOT / ".agents/skills/boss-recruiter/scripts/setup_cli.py")
-	assets = tmp_path / "assets"
-	assets.mkdir()
-	for index in range(count):
-		(assets / f"boss_agent_cli-{index}-py3-none-any.whl").touch()
-	monkeypatch.setattr(setup, "__file__", str(tmp_path / "scripts/setup_cli.py"))
-	monkeypatch.setattr(sys, "argv", ["setup_cli.py"])
-	with pytest.raises(SystemExit) as error:
-		setup.main()
-	assert error.value.code == 2
-	assert not (tmp_path / ".venv").exists()
+@pytest.mark.skipif(os.name != "nt", reason="Windows 启动器")
+def test_launcher_does_not_fall_back_to_old_venv(tmp_path, monkeypatch):
+	launcher = load_script(ROOT / ".agents/skills/boss-recruiter/scripts/boss.py")
+	old = tmp_path / ".venv/Scripts/python.exe"
+	old.parent.mkdir(parents=True)
+	old.touch()
+	monkeypatch.setattr(launcher, "__file__", str(tmp_path / "scripts/boss.py"))
+	assert launcher.main() == 1
+
+
+def test_packager_rejects_browser_revision_drift(tmp_path):
+	packager = load_script(ROOT / "scripts/package_recruiter_skill.py")
+	lock = json.loads((ROOT / ".agents/skills/boss-recruiter/assets/runtime-lock.json").read_text(encoding="utf-8"))
+	manifest = tmp_path / "patchright/driver/package/browsers.json"
+	manifest.parent.mkdir(parents=True)
+	entries = [
+		{"name": name, "revision": lock["chromium_revision"], "browserVersion": lock["chromium_version"]}
+		for name in ("chromium", "chromium-headless-shell")
+	]
+	manifest.write_text(json.dumps({"browsers": entries}), encoding="utf-8")
+	assert packager.check_browser_manifest(tmp_path, lock)["browsers"] == entries
+	entries[1]["revision"] = "9999"
+	manifest.write_text(json.dumps({"browsers": entries}), encoding="utf-8")
+	with pytest.raises(ValueError, match="不匹配"):
+		packager.check_browser_manifest(tmp_path, lock)
+
+
+def test_packager_rejects_corrupted_python_download(tmp_path):
+	packager = load_script(ROOT / "scripts/package_recruiter_skill.py")
+	(tmp_path / "python.zip").write_bytes(b"corrupt")
+	with pytest.raises(ValueError, match="SHA-256"):
+		packager.download_python(
+			{"python_url": "https://www.python.org/python.zip", "python_sha256": "0" * 64}, tmp_path
+		)

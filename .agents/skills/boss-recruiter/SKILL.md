@@ -9,26 +9,23 @@ description: 使用 boss-agent-cli 为 BOSS 直聘招聘者搜索和推荐候选
 
 ## 运行入口
 
-`SKILL.md` 描述工作流程；`assets/boss_agent_cli-*.whl` 包含 CLI，安装脚本将它及依赖安装到本 Skill 的 `.venv/` 中。不需要原作者的项目目录，也不依赖全局 `boss` 的版本。
+这是 Windows x64 便携版。Python、CLI、第三方依赖、Chromium 和 Headless Shell 均已包含。直接调用 Skill 根目录的 `boss.cmd`；不安装 Python、pip 或浏览器，也不调用全局 `boss`。
 
-以下命令从解压后的 `boss-recruiter` 目录运行；从其他目录调用时，将脚本路径替换为当前 Skill 的绝对路径。启动器按自身位置定位环境，不改变当前工作目录，兼容 Windows、macOS 和 Linux。需要 Python 3.10 及以上（含 pip 和 venv）；首次安装需联网下载第三方依赖。
+先根据本 `SKILL.md` 的真实位置定位同目录的 `boss.cmd`。以下 PowerShell 示例从 Skill 根目录运行；从其他目录调用时，使用 `& "本Skill绝对路径\boss.cmd"`，不要切换业务输出目录：
 
-```bash
-# 首次安装：使用 assets 中的 CLI 安装包
-python scripts/setup_cli.py
-
-# 离线能力发现，不要求登录
-python scripts/boss.py --json --role recruiter --platform zhipin schema
-python scripts/boss.py hr --help
+```powershell
+# 离线能力发现，不需要登录或下载
+.\boss.cmd --json --role recruiter --platform zhipin schema
+.\boss.cmd hr --help
 ```
 
-如需扫码登录的 Chromium 内核，再执行 `python scripts/setup_cli.py --browser`（会下载浏览器）。环境不会在普通业务命令中自动安装或升级。移动到其他电脑或目录后重新安装，不复制 `.venv/`。若收到的旧包已包含 `.venv/`，先移除该目录再安装；旧环境可能仍指向原作者的源码路径。
+以下流程和[命令参考](references/recruiter-cli.md)里的 `boss` 均表示 `& "本Skill绝对路径\boss.cmd"`，全局选项放在子命令之前。启动器自动定位包内 Python 和 `ms-playwright/`。仅当用户明确指定浏览器目录时设置 `PLAYWRIGHT_BROWSERS_PATH`，启动器会保留该覆盖。
 
-完整分发包必须包含 `SKILL.md`、`scripts/`、`references/`、`agents/` 和 `assets/` 中的一个 CLI wheel。缺少 wheel 时向分发者获取完整包，不寻找原作者电脑路径。只有用户需要指定其他版本时，才使用 `--source "boss-agent-cli==明确版本"` 或 `--source 本地安装包路径`。
+版本固定在 `assets/runtime-lock.json`：Patchright 1.64.3 与 Chromium 修订版 1248 配套。`portable-manifest.json` 记录完整依赖及文件校验值。不要单独升级 Patchright 或替换浏览器目录；升级需完整更换便携包。
 
-维护者更新 CLI 后，在项目仓库运行 `python scripts/package_recruiter_skill.py`，刷新随包 wheel 并生成 `dist/boss-recruiter.zip`。分发该压缩包；不要直接压缩已安装环境的目录。开发调试可显式使用 `setup_cli.py --source 项目目录`，这也是普通安装，源码修改后需重新安装。
+若缺少 `runtime/python.exe`、`ms-playwright/` 或启动器，报告分发包不完整，让用户重新解压完整的 Windows 便携包。不要寻找作者电脑上的项目路径，也不要尝试用系统 Python 补齐。
 
-以下流程和[命令参考](references/recruiter-cli.md)里的 `boss` 均表示 `python 本Skill绝对路径/scripts/boss.py`。全局选项放在子命令之前。
+包可以整体移动，不复制旧 `.venv`。仅支持 Windows x64；招聘接口仍需网络，扫码由用户完成。`doctor` 中未登录、未开启 CDP 或未安装系统 Chrome 等提示，与包内 Chromium 是否完整是不同检查项。
 
 ## 身份和岗位
 

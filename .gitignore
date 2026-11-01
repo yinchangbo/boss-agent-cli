@@ -19,6 +19,9 @@ GEMINI.md
 .ace-tool/
 .agents/skills/*
 !.agents/skills/boss-recruiter/
+.agents/skills/boss-recruiter/runtime/
+.agents/skills/boss-recruiter/ms-playwright/
+.agents/skills/boss-recruiter/portable-manifest.json
 .agents/skills.disabled-*/
 .trellis/
 skills/*.disabled-*/

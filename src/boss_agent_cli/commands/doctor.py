@@ -19,7 +19,7 @@ from boss_agent_cli.commands._doctor_checks import _add_live_probe_checks, _add_
 from boss_agent_cli.display import handle_output, render_simple_list
 from boss_agent_cli.services.browser_runtime import (
 	evaluate_patchright_chromium,
-	patchright_browser_cache_dirs,
+	installed_patchright_chromium_dirs,
 	patchright_chromium_revision,
 )
 
@@ -69,16 +69,8 @@ def doctor_cmd(ctx: click.Context, live_probe: bool, probe_cookies: bool) -> Non
 		"运行 uv run patchright install chromium 或确认已正确安装 patchright",
 	)
 
-	patchright_browser_dirs = [
-		*patchright_browser_cache_dirs(),
-	]
-	chromium_candidates: list[Path] = []
-	for base in patchright_browser_dirs:
-		if base.exists():
-			chromium_candidates.extend(base.glob("chromium-*"))
-			chromium_candidates.extend(base.glob("chromium_headless_shell-*"))
 	chromium_status, chromium_detail = evaluate_patchright_chromium(
-		patchright_chromium_revision(), chromium_candidates
+		patchright_chromium_revision(), installed_patchright_chromium_dirs()
 	)
 	add_check(
 		"patchright_chromium",
