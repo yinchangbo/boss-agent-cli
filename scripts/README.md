@@ -2,6 +2,18 @@
 
 仓库辅助脚本目录。
 
+## package_recruiter_skill.py
+
+生成可以独立分发的招聘 Skill，无需接收者拥有本项目源码：
+
+```bash
+python scripts/package_recruiter_skill.py
+```
+
+脚本构建当前源码的 wheel，更新 `.agents/skills/boss-recruiter/assets/` 中的安装包，生成 `dist/boss-recruiter.zip`。压缩包只包含 Skill 说明、命令参考、启动/安装脚本及 CLI wheel，不包含 `.venv`、登录态或业务数据。CLI 修改后需重新打包。
+
+接收者需要 Python 3.10 及以上，解压后在 `boss-recruiter` 目录执行 `python scripts/setup_cli.py`，联网安装第三方依赖；扫码登录还需 `python scripts/setup_cli.py --browser`。每台电脑重新创建环境，不能分发可编辑安装的 `.venv`。
+
 ## verify_release.py
 
 维护者发布验证：默认只读检查项目版本、已构建 wheel/sdist 的元数据与文件清单、SHA-256 和 Git 状态，不访问包索引、不执行发布或招聘平台请求。产物目录必须恰好包含目标版本的一份 wheel 和一份源码包；混入旧包会失败，不按修改时间猜测。

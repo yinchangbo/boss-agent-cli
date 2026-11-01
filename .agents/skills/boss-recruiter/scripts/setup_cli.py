@@ -14,7 +14,7 @@ def main() -> int:
 		if hasattr(stream, "reconfigure"):
 			stream.reconfigure(encoding="utf-8")
 	parser = argparse.ArgumentParser(description=__doc__)
-	parser.add_argument("--source", help="本地项目目录或带版本的 pip 包规格；默认查找所在仓库")
+	parser.add_argument("--source", help="覆盖随包安装源：本地项目目录、wheel 文件或带版本的 pip 包规格")
 	parser.add_argument("--browser", action="store_true", help="同时安装扫码登录所需的 Chromium")
 	args = parser.parse_args()
 	if sys.version_info < (3, 10):
@@ -22,15 +22,18 @@ def main() -> int:
 	skill_dir = Path(__file__).resolve().parents[1]
 	source = args.source
 	if source is None:
-		for parent in skill_dir.parents:
-			if (parent / "pyproject.toml").is_file() and (parent / "src/boss_agent_cli/main.py").is_file():
-				source = str(parent)
-				break
+		wheels = sorted((skill_dir / "assets").glob("boss_agent_cli-*.whl"))
+		if len(wheels) > 1:
+			parser.error("assets 中存在多个 CLI 安装包，请使用重新打包的 Skill，或通过 --source 指定一个安装包")
+		if wheels:
+			source = str(wheels[0])
 	if not source:
-		parser.error('找不到项目源码，请指定 --source 仓库路径 或 --source "boss-agent-cli==版本"')
+		parser.error("缺少 assets/boss_agent_cli-*.whl，请获取完整的 Skill 分发包，或通过 --source 指定安装源")
 	source_path = Path(source).expanduser()
 	if source_path.is_dir():
-		install_args = ["--editable", str(source_path.resolve())]
+		install_args = [str(source_path.resolve())]
+	elif source_path.is_file():
+		install_args = [str(source_path.resolve())]
 	else:
 		install_args = [source]
 	env_dir = skill_dir / ".venv"
