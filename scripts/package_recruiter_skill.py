@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import csv
 import hashlib
 import json
@@ -103,11 +104,113 @@ def write_portable_archive(skill: Path, destination: Path) -> None:
 				archive.write(path, (Path("boss-recruiter") / path.relative_to(skill)).as_posix())
 
 
+def find_seven_zip(explicit: Path | None = None) -> Path:
+	"""优先使用显式路径，再查 PATH 和 Windows 常见安装目录。"""
+	if explicit is not None:
+		if explicit.is_file():
+			return explicit.resolve()
+		raise FileNotFoundError(f"指定的 7-Zip 不存在：{explicit}")
+	for name in ("7z", "7zz"):
+		if found := shutil.which(name):
+			return Path(found).resolve()
+	for key in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+		if base := os.environ.get(key):
+			folder = Path(base) / ("Programs/7-Zip" if key == "LOCALAPPDATA" else "7-Zip")
+			if (folder / "7z.exe").is_file():
+				return (folder / "7z.exe").resolve()
+	raise FileNotFoundError("未找到 7-Zip。请先安装 7-Zip，或通过 --seven-zip 指定 7z.exe 的路径；尚未开始构建。")
+
+
+def write_seven_zip(skill: Path, destination: Path, seven_zip: Path, env: dict[str, str]) -> None:
+	# 7z a 会更新已有压缩包，因此必须使用新的临时文件，避免残留被删除的旧文件。
+	if destination.exists():
+		raise FileExistsError(f"7z 临时文件已存在，拒绝增量更新：{destination}")
+	subprocess.run(
+		[
+			str(seven_zip),
+			"a",
+			"-t7z",
+			"-m0=LZMA2",
+			"-mx=9",
+			"-md=128m",
+			"-ms=on",
+			"-mmt=2",
+			"-bsp0",
+			"-sccUTF-8",
+			str(destination.resolve()),
+			skill.name,
+		],
+		cwd=skill.parent,
+		env=env,
+		check=True,
+	)
+	subprocess.run([str(seven_zip), "t", "-bsp0", "-sccUTF-8", str(destination)], env=env, check=True)
+
+
+def verify_portable_zip(archive: Path, report: Path, env: dict[str, str]) -> None:
+	subprocess.run(
+		[sys.executable, str(ROOT / "scripts/verify_recruiter_windows.py"), str(archive), "--report", str(report)],
+		env=env,
+		check=True,
+	)
+
+
+def package_and_publish(skill: Path, output: Path, seven_zip: Path, env: dict[str, str]) -> None:
+	"""同一份干净目录生成两个格式，全部检查通过后才更新成品。"""
+	staging = skill.parent / "artifacts"
+	staging.mkdir()  # 每次构建都在独立目录中执行，不复用旧压缩包。
+	zip_path = staging / "boss-recruiter.zip"
+	seven_path = staging / "boss-recruiter.7z"
+	report_path = staging / "boss-recruiter.validation.json"
+	print("生成 ZIP 并执行迁移验收……", flush=True)
+	write_portable_archive(skill, zip_path)
+	verify_portable_zip(zip_path, report_path, env)
+	print("生成 7z（LZMA2 高压缩，可能需要数分钟）并检查完整性……", flush=True)
+	write_seven_zip(skill, seven_path, seven_zip, env)
+	archives = {}
+	for path in (zip_path, seven_path):
+		digest = sha256(path)
+		path.with_suffix(path.suffix + ".sha256").write_text(f"{digest}  {path.name}\n", encoding="ascii")
+		archives[path.name] = {"sha256": digest, "size_bytes": path.stat().st_size}
+	report = json.loads(report_path.read_text(encoding="utf-8"))
+	if report.get("passed") is not True:
+		raise ValueError("ZIP 迁移验收报告未通过，保留已有成品")
+	report.update(
+		archive=zip_path.name,
+		sha256=archives[zip_path.name]["sha256"],
+		archives=archives,
+		seven_zip_integrity_passed=True,
+		same_source_directory=True,
+	)
+	report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+	output.mkdir(parents=True, exist_ok=True)
+	for name in (
+		"boss-recruiter.zip",
+		"boss-recruiter.7z",
+		"boss-recruiter.zip.sha256",
+		"boss-recruiter.7z.sha256",
+		"boss-recruiter.validation.json",
+	):
+		(staging / name).replace(output / name)
+	print(f"已生成并通过迁移验收：{output / zip_path.name}", flush=True)
+	print(f"已生成并通过完整性检查：{output / seven_path.name}", flush=True)
+
+
 def main() -> int:
 	if hasattr(sys.stdout, "reconfigure"):
 		sys.stdout.reconfigure(encoding="utf-8")
+	parser = argparse.ArgumentParser(description=__doc__)
+	parser.add_argument("--seven-zip", type=Path, help="7z.exe 路径；默认自动查找 PATH 和常见安装目录")
+	args = parser.parse_args()
 	if os.name != "nt" or platform.machine().lower() not in {"amd64", "x86_64"}:
 		raise SystemExit("请在 Windows x64 构建和验证此便携包")
+	try:
+		seven_zip = find_seven_zip(args.seven_zip)
+	except FileNotFoundError as exc:
+		parser.error(str(exc))
+	# 在下载、安装和压缩前确认工具可运行，避免最后才发现缺少 7-Zip。
+	subprocess.run([str(seven_zip), "i"], check=True, stdout=subprocess.DEVNULL)
+	print(f"使用 7-Zip：{seven_zip}", flush=True)
 	lock = json.loads((SKILL / "assets/runtime-lock.json").read_text(encoding="utf-8"))
 	requirements = SKILL / "assets/requirements-windows.lock.txt"
 	if f"patchright=={lock['patchright_version']} " not in requirements.read_text(encoding="utf-8").lower():
@@ -207,28 +310,7 @@ def main() -> int:
 		(skill / "portable-manifest.json").write_text(
 			json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
 		)
-		partial = WORK / "boss-recruiter.pending.zip"
-		print("压缩便携包……", flush=True)
-		write_portable_archive(skill, partial)
-	# 解压到全新中文/空格路径，清空 Python PATH 和浏览器缓存引用后验收。
-	run(
-		[
-			sys.executable,
-			str(ROOT / "scripts/verify_recruiter_windows.py"),
-			str(partial),
-			"--report",
-			str(ROOT / "dist/boss-recruiter.validation.json"),
-		]
-	)
-	destination = ROOT / "dist/boss-recruiter.zip"
-	partial.replace(destination)
-	digest = sha256(destination)
-	destination.with_suffix(".zip.sha256").write_text(f"{digest}  {destination.name}\n", encoding="ascii")
-	report_path = ROOT / "dist/boss-recruiter.validation.json"
-	report = json.loads(report_path.read_text(encoding="utf-8"))
-	report.update(archive=destination.name, sha256=digest)
-	report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-	print(f"已生成并通过迁移验收：{destination}")
+		package_and_publish(skill, ROOT / "dist", seven_zip, env)
 	return 0
 
 

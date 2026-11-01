@@ -136,51 +136,36 @@ with BossClient(AuthManager(...)) as client:
 python scripts/package_recruiter_skill.py
 ```
 
-打包电脑需要 Windows x64、Python 3.10+、支持 `--python` 选项的 pip 和网络。接收者电脑无需安装 Python。脚本从当前工作区重新构建 CLI，内置 Python 3.14.10、Patchright 1.64.3、Chromium 修订版 1248、匹配的 Headless Shell 及全部运行依赖。
+打包电脑需要 Windows x64、Python 3.10+、支持 `--python` 选项的 pip、7-Zip 和网络。接收者电脑无需安装 Python。脚本从当前工作区重新构建 CLI，内置 Python 3.14.10、Patchright 1.64.3、Chromium 修订版 1248、匹配的 Headless Shell 及全部运行依赖。
 
 下次修改代码时：
 
 1. 修改 `src/boss_agent_cli/` 中的 CLI 代码，或 `.agents/skills/boss-recruiter/` 中的 Skill 说明、启动器等文件。
 2. 再运行同一条打包命令。不需要手动构建 wheel、复制 `.venv` 或删除下载缓存；普通代码改动不需要调整运行时版本锁。
-3. 等待命令退出码为 `0`，并显示“已生成并通过迁移验收”。脚本会在仓库外的中文/空格路径中验证 CLI 和两种 Chromium 的实际启动，通过后才替换最终 ZIP。失败时可能仍保留上一次成功的 ZIP，不要把它误当作本次新包。
+3. 等待命令退出码为 `0`，并显示“已生成并通过迁移验收”。脚本会在仓库外的中文/空格路径中验证 CLI 和两种 Chromium 的实际启动，再生成 7z 并检查完整性。两种格式全部验证通过后才更新成品和报告。失败时可能仍保留上一次成功的产物，不要把它误当作本次新包。
 4. 分发新包；接收者将其解压到空目录，整体替换旧 Skill，不混入旧 `.venv` 或旧运行环境。需要发布时，将新压缩包、对应校验文件及验收报告上传到新的 GitHub Release；打包命令不会自动提交、推送或发布。
 
 | 自动生成的文件 | 用途 |
 | --- | --- |
 | `dist/boss-recruiter.zip` | 完整 Windows x64 便携包 |
+| `dist/boss-recruiter.7z` | 同一便携版的高压缩格式 |
 | `dist/boss-recruiter.zip.sha256` | ZIP 的 SHA-256 校验值 |
-| `dist/boss-recruiter.validation.json` | 本次 ZIP 的运行验收结果 |
+| `dist/boss-recruiter.7z.sha256` | 7z 的 SHA-256 校验值 |
+| `dist/boss-recruiter.validation.json` | ZIP 运行验收、7z 完整性结果及两份压缩包摘要 |
 
 下载缓存位于 `dist/windows-build/`。如需升级 Python、Patchright 或 Chromium，应一起更新 [runtime-lock.json](.agents/skills/boss-recruiter/assets/runtime-lock.json) 和 [requirements-windows.lock.txt](.agents/skills/boss-recruiter/assets/requirements-windows.lock.txt)，同步 Skill 中的版本说明，再重新打包验收。不要在接收者电脑上单独升级 Patchright。
 
-### 同时生成较小的 7z
+### 7-Zip 工具定位
 
-上面的 Python 命令**只生成 ZIP，不会更新已有的 7z**。如需发布两种格式，先成功生成新 ZIP，再在仓库根目录执行以下 PowerShell 命令。需要已安装 7-Zip；安装位置不同请修改 `$sevenZip`。
+脚本自动从 PATH 和 Windows 常见安装目录查找 `7z.exe` / `7zz`。如果安装在自定义位置，可显式指定：
 
 ```powershell
-$ErrorActionPreference = 'Stop'
-$sevenZip = 'C:\Program Files\7-Zip\7z.exe'
-$repoRoot = (Get-Location).Path
-$stage = Join-Path $repoRoot ('dist\windows-build\7zip-' + [guid]::NewGuid().ToString('N'))
-
-# 使用新的临时目录，确保不会混入上一次打包的文件
-& $sevenZip x "$repoRoot\dist\boss-recruiter.zip" "-o$stage" -y
-if ($LASTEXITCODE -ne 0) { throw 'ZIP 解压失败' }
-Push-Location -LiteralPath $stage
-try {
-    & $sevenZip a -t7z -m0=LZMA2 -mx=9 -md=128m -ms=on -mmt=2 'boss-recruiter.7z' 'boss-recruiter'
-    if ($LASTEXITCODE -ne 0) { throw '7z 压缩失败' }
-    & $sevenZip t 'boss-recruiter.7z'
-    if ($LASTEXITCODE -ne 0) { throw '7z 完整性检查失败' }
-    Copy-Item -LiteralPath '.\boss-recruiter.7z' -Destination "$repoRoot\dist\boss-recruiter.7z" -Force
-} finally {
-    Pop-Location
-}
-$digest = (Get-FileHash -LiteralPath "$repoRoot\dist\boss-recruiter.7z" -Algorithm SHA256).Hash.ToLowerInvariant()
-Set-Content -LiteralPath "$repoRoot\dist\boss-recruiter.7z.sha256" -Value "$digest  boss-recruiter.7z" -Encoding ascii
+python scripts/package_recruiter_skill.py --seven-zip "E:\Tools\7-Zip\7z.exe"
 ```
 
-完成后额外得到 `dist/boss-recruiter.7z` 和 `dist/boss-recruiter.7z.sha256`，确认成品后可手动删除 `$stage` 指向的临时目录。两种格式包含相同的完整便携版，任选其一分发即可。2026-11-01 版本实测 ZIP 为 383.1 MiB，7z 为 227.3 MiB；后续大小随代码和依赖变化。
+找不到 7-Zip 时，脚本会在开始下载和构建之前报错，不会静默只生成 ZIP。无需再手动解压 ZIP、执行压缩命令或生成校验文件。ZIP 和 7z 使用同一份本次构建目录，7z 采用 LZMA2、128 MiB 字典和固实压缩，并执行 `7z t` 完整性检查；高压缩可能耗时数分钟。
+
+两种格式包含相同的完整便携版，任选其一分发即可。2026-11-01 版本实测 ZIP 为 383.1 MiB，7z 为 227.3 MiB；后续大小随代码和依赖变化。
 
 更多构建及单独验收说明见 [scripts/README.md](scripts/README.md#package_recruiter_skillpy)。
 

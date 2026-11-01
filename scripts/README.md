@@ -4,21 +4,21 @@
 
 ## package_recruiter_skill.py
 
-构建唯一分发形式：Windows x64 便携版招聘 Skill。维护者在 Windows x64、Python 3.10+（pip 支持 `--python`）环境运行：
+构建唯一分发形式：Windows x64 便携版招聘 Skill。维护者在 Windows x64、Python 3.10+（pip 支持 `--python`）、已安装 7-Zip 的环境运行：
 
 ```bash
 python scripts/package_recruiter_skill.py
 ```
 
-每次修改 CLI 或 Skill 后，都运行同一条命令重新构建；使用的是当前工作区源码，不要求先发布 Python 包。成功退出并显示“已生成并通过迁移验收”后，再分发 `dist/boss-recruiter.zip`。构建失败时旧 ZIP 可能仍存在。
+每次修改 CLI 或 Skill 后，都运行同一条命令重新构建；使用的是当前工作区源码，不要求先发布 Python 包。成功退出并显示“已生成并通过迁移验收”后，再分发 `dist/boss-recruiter.zip` 或 `dist/boss-recruiter.7z`。构建失败时旧产物可能仍存在。
 
-该脚本只生成 ZIP、ZIP 校验值和验收报告，不生成或更新 7z，也不自动提交代码或发布 Release。需要 7z 时，从本次新 ZIP 重新压缩，完整 PowerShell 命令见[首页 README 的打包与更新说明](../README.md#windows-portable-skill)。
+一次运行自动生成 ZIP、7z、各自的 `.sha256` 文件及验收报告，不自动提交代码或发布 Release。脚本启动时查找并检查 7-Zip；自定义安装位置可使用 `--seven-zip "E:\Tools\7-Zip\7z.exe"`。找不到工具时在构建前停止。完整步骤见[首页 README 的打包与更新说明](../README.md#windows-portable-skill)。
 
 脚本构建当前源码，生成 `dist/boss-recruiter.zip`，内含 Python 3.14.10、全部 CLI 运行依赖、Patchright 1.64.3、Chromium 156.0.8078.4（修订版 1248）、Headless Shell 和配套组件。接收者解压后，Agent 按 `SKILL.md` 调用 `boss.cmd`，无需安装 Python、pip、依赖或浏览器。招聘操作仍需网络和用户自己的登录态。只支持 Windows x64。
 
 - `assets/runtime-lock.json` 固定 Python 下载地址与 SHA-256、Patchright 和 Chromium 版本；`assets/requirements-windows.lock.txt` 固定全部第三方 wheel 的版本和 SHA-256。构建时校验实际 `browsers.json`，不靠手工猜测配对关系。
 - 包使用 Python 官方嵌入式发行版，路径相对于包内 `python.exe`。不复制开发者 `.venv`，不打入登录态、业务数据、浏览器用户配置或构建机绝对路径启动器。
-- 下载缓存位于 `dist/windows-build/`。每次用全新临时目录组装，成功验收后才替换最终 ZIP；`dist/boss-recruiter.zip.sha256` 与 `dist/boss-recruiter.validation.json` 分别保存校验值和验收报告。
+- 下载缓存位于 `dist/windows-build/`。每次用全新临时目录组装，同一目录生成 ZIP 和 7z，避免增量压缩留下旧文件。ZIP 迁移验收及 `7z t` 全部通过后才更新最终产物。`dist/boss-recruiter.validation.json` 记录运行检查、7z 完整性结果及两份压缩包的大小、SHA-256。
 - 验收将 ZIP 解压至仓库外的中文/空格路径，清空系统 Python PATH，使用临时用户目录，检查文件完整性、CLI、doctor、登录向导预检和两种 Chromium 可执行程序的实际启动。不访问招聘业务接口。
 - `PLAYWRIGHT_BROWSERS_PATH` 默认自动指向包内浏览器；用户显式设置时保留覆盖。doctor 与向导只检查实际选中的目录，支持 `0` 和相对路径。
 - 更新 CLI 后重新打包。升级运行时需一起审核两个锁文件、Skill 中的版本说明并重新验收，不在接收者电脑上单独升级 Patchright。
