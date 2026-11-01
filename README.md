@@ -13,7 +13,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](https://github.com/can4hou6joeng4/boss-agent-cli/pulls)
 [![MCP Toplist](https://mcptoplist.com/badge/glama%2Fcan4hou6joeng4%2Fboss-agent-cli.svg)](https://mcptoplist.com/server/glama%2Fcan4hou6joeng4%2Fboss-agent-cli)
 
-[快速上手](docs/getting-started.md) · [Agent 集成](#-agent-集成) · [命令](#-命令) · [排障](docs/troubleshooting.md) · [路线图](ROADMAP.md) · **中文** | [English](README.en.md)
+[快速上手](docs/getting-started.md) · [Windows 便携包](#windows-portable-skill) · [Agent 集成](#-agent-集成) · [命令](#-命令) · [排障](docs/troubleshooting.md) · [路线图](ROADMAP.md) · **中文** | [English](README.en.md)
 
 <a href="demo/showcase/boss-agent-cli-showcase.mp4" title="观看 48 秒产品发布会动画">
   <img src="demo/showcase/boss-agent-cli-showcase.gif?v=keynote-20261008" alt="boss-agent-cli 极光发布会动画：福利筛选、双角色工作流与 Agent 接入" width="100%">
@@ -89,14 +89,13 @@ boss --platform zhipin search "Python"     # --platform 默认即 zhipin，可�
 
 推荐先读：[Agent Quickstart](docs/agent-quickstart.md) · [Capability Matrix](docs/capability-matrix.md) · [Host Examples](docs/agent-hosts.md)
 
-项目内置[招聘 Skill](.agents/skills/boss-recruiter/SKILL.md)，使用本仓库 CLI 编排候选人搜索、简历分析及招聘沟通。CLI 可安装在 Skill 自身的独立环境中：
+项目内置[招聘 Skill](.agents/skills/boss-recruiter/SKILL.md)，使用本仓库 CLI 编排候选人搜索、简历分析及招聘沟通。Windows 用户从 [Release](https://github.com/yinchangbo/boss-agent-cli/releases) 下载便携包，解压后将整个 `boss-recruiter` 文件夹放入 Agent 的技能目录。包内已包含 Python、依赖和浏览器，无需安装；Codex 的个人技能目录为 `%USERPROFILE%\.agents\skills\`。
 
-```bash
-python .agents/skills/boss-recruiter/scripts/setup_cli.py
-python .agents/skills/boss-recruiter/scripts/boss.py --json --role recruiter schema
+```powershell
+& "$env:USERPROFILE\.agents\skills\boss-recruiter\boss.cmd" --json --role recruiter schema
 ```
 
-支持该 Skill 目录的 Agent 宿主可通过 `$boss-recruiter` 调用；其他宿主也可直接加载 `SKILL.md` 并执行脚本。首次使用需要登录时，再按 Skill 指引安装浏览器并完成登录。
+支持该 Skill 目录的 Agent 宿主可通过 `$boss-recruiter` 调用；其他宿主也可直接加载 `SKILL.md` 并调用 `boss.cmd`。需要登录时按 Skill 指引扫码。仓库内的 Skill 是构建源码，不含便携运行环境；修改代码后的重新打包方法见下文。
 
 ```json
 // 方式一：MCP（推荐）—— Claude Desktop / Cursor 等 MCP 宿主，暴露 78 个已实现工具
@@ -126,6 +125,64 @@ from boss_agent_cli import AuthManager, BossClient, AuthRequired
 with BossClient(AuthManager(...)) as client:
     result = client.search_jobs("Golang", city="广州")
 ```
+
+<a id="windows-portable-skill"></a>
+
+## Windows 便携版招聘 Skill：打包与更新
+
+**打包命令只有一条，在仓库根目录执行：**
+
+```powershell
+python scripts/package_recruiter_skill.py
+```
+
+打包电脑需要 Windows x64、Python 3.10+、支持 `--python` 选项的 pip 和网络。接收者电脑无需安装 Python。脚本从当前工作区重新构建 CLI，内置 Python 3.14.10、Patchright 1.64.3、Chromium 修订版 1248、匹配的 Headless Shell 及全部运行依赖。
+
+下次修改代码时：
+
+1. 修改 `src/boss_agent_cli/` 中的 CLI 代码，或 `.agents/skills/boss-recruiter/` 中的 Skill 说明、启动器等文件。
+2. 再运行同一条打包命令。不需要手动构建 wheel、复制 `.venv` 或删除下载缓存；普通代码改动不需要调整运行时版本锁。
+3. 等待命令退出码为 `0`，并显示“已生成并通过迁移验收”。脚本会在仓库外的中文/空格路径中验证 CLI 和两种 Chromium 的实际启动，通过后才替换最终 ZIP。失败时可能仍保留上一次成功的 ZIP，不要把它误当作本次新包。
+4. 分发新包；接收者将其解压到空目录，整体替换旧 Skill，不混入旧 `.venv` 或旧运行环境。需要发布时，将新压缩包、对应校验文件及验收报告上传到新的 GitHub Release；打包命令不会自动提交、推送或发布。
+
+| 自动生成的文件 | 用途 |
+| --- | --- |
+| `dist/boss-recruiter.zip` | 完整 Windows x64 便携包 |
+| `dist/boss-recruiter.zip.sha256` | ZIP 的 SHA-256 校验值 |
+| `dist/boss-recruiter.validation.json` | 本次 ZIP 的运行验收结果 |
+
+下载缓存位于 `dist/windows-build/`。如需升级 Python、Patchright 或 Chromium，应一起更新 [runtime-lock.json](.agents/skills/boss-recruiter/assets/runtime-lock.json) 和 [requirements-windows.lock.txt](.agents/skills/boss-recruiter/assets/requirements-windows.lock.txt)，同步 Skill 中的版本说明，再重新打包验收。不要在接收者电脑上单独升级 Patchright。
+
+### 同时生成较小的 7z
+
+上面的 Python 命令**只生成 ZIP，不会更新已有的 7z**。如需发布两种格式，先成功生成新 ZIP，再在仓库根目录执行以下 PowerShell 命令。需要已安装 7-Zip；安装位置不同请修改 `$sevenZip`。
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$sevenZip = 'C:\Program Files\7-Zip\7z.exe'
+$repoRoot = (Get-Location).Path
+$stage = Join-Path $repoRoot ('dist\windows-build\7zip-' + [guid]::NewGuid().ToString('N'))
+
+# 使用新的临时目录，确保不会混入上一次打包的文件
+& $sevenZip x "$repoRoot\dist\boss-recruiter.zip" "-o$stage" -y
+if ($LASTEXITCODE -ne 0) { throw 'ZIP 解压失败' }
+Push-Location -LiteralPath $stage
+try {
+    & $sevenZip a -t7z -m0=LZMA2 -mx=9 -md=128m -ms=on -mmt=2 'boss-recruiter.7z' 'boss-recruiter'
+    if ($LASTEXITCODE -ne 0) { throw '7z 压缩失败' }
+    & $sevenZip t 'boss-recruiter.7z'
+    if ($LASTEXITCODE -ne 0) { throw '7z 完整性检查失败' }
+    Copy-Item -LiteralPath '.\boss-recruiter.7z' -Destination "$repoRoot\dist\boss-recruiter.7z" -Force
+} finally {
+    Pop-Location
+}
+$digest = (Get-FileHash -LiteralPath "$repoRoot\dist\boss-recruiter.7z" -Algorithm SHA256).Hash.ToLowerInvariant()
+Set-Content -LiteralPath "$repoRoot\dist\boss-recruiter.7z.sha256" -Value "$digest  boss-recruiter.7z" -Encoding ascii
+```
+
+完成后额外得到 `dist/boss-recruiter.7z` 和 `dist/boss-recruiter.7z.sha256`，确认成品后可手动删除 `$stage` 指向的临时目录。两种格式包含相同的完整便携版，任选其一分发即可。2026-11-01 版本实测 ZIP 为 383.1 MiB，7z 为 227.3 MiB；后续大小随代码和依赖变化。
+
+更多构建及单独验收说明见 [scripts/README.md](scripts/README.md#package_recruiter_skillpy)。
 
 ## 📚 命令
 

@@ -10,6 +10,10 @@
 python scripts/package_recruiter_skill.py
 ```
 
+每次修改 CLI 或 Skill 后，都运行同一条命令重新构建；使用的是当前工作区源码，不要求先发布 Python 包。成功退出并显示“已生成并通过迁移验收”后，再分发 `dist/boss-recruiter.zip`。构建失败时旧 ZIP 可能仍存在。
+
+该脚本只生成 ZIP、ZIP 校验值和验收报告，不生成或更新 7z，也不自动提交代码或发布 Release。需要 7z 时，从本次新 ZIP 重新压缩，完整 PowerShell 命令见[首页 README 的打包与更新说明](../README.md#windows-portable-skill)。
+
 脚本构建当前源码，生成 `dist/boss-recruiter.zip`，内含 Python 3.14.10、全部 CLI 运行依赖、Patchright 1.64.3、Chromium 156.0.8078.4（修订版 1248）、Headless Shell 和配套组件。接收者解压后，Agent 按 `SKILL.md` 调用 `boss.cmd`，无需安装 Python、pip、依赖或浏览器。招聘操作仍需网络和用户自己的登录态。只支持 Windows x64。
 
 - `assets/runtime-lock.json` 固定 Python 下载地址与 SHA-256、Patchright 和 Chromium 版本；`assets/requirements-windows.lock.txt` 固定全部第三方 wheel 的版本和 SHA-256。构建时校验实际 `browsers.json`，不靠手工猜测配对关系。
